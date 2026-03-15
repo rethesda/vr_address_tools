@@ -26,7 +26,7 @@ RELID_PATTERN = r"(\w+){ REL::ID\(([0-9]+)\),*\s*([a-fx0-9])*\s+};"
 # po3 latest pattern RELOCATION_ID(SSE, AE) and REL_ID(SSE, AE, VR)
 # also	stl::write_thunk_call<MainLoop_Update>(REL::RelocationID(35551, 36550).address() + REL::Relocate(0x11F, 0x11F));
 # also  variantid pattern static REL::Relocation<uintptr_t> func{ REL::VariantID(63017, 63942, 0xB40550) }; // B05710, B2A980, B40550  hkbBehaviorGraph::unk
-RELOCATION_ID_PATTERN = r"(?P<prefix>[\w_]+)?(?:[{>(]* ?)?(?:rel::)?(?:REL(?:OCATION)?_?ID|VariantID)\((?P<sse>[0-9]+),+\s*(?P<ae>[0-9]*)(?:,+\s*0x(?P<vr_idoffset>[a-f0-9]*))?\)(?:,\s*OFFSET(?:_3)?\((?P<sse_offset>0x[a-f0-9]+)(?P<ae_offset>,\s*0x[a-f0-9]+)?(?P<vr_offset>,\s*0x[a-f0-9]+)?\))?(?:\s*};)?"
+RELOCATION_ID_PATTERN = r"(?P<prefix>[\w_]+)?(?:[{>(]* ?)?(?:rel::)?(?:REL(?:OCATION)?_?ID|VariantID)(?:\s+\w+)?\((?P<sse>[0-9]+),+\s*(?P<ae>[0-9]*)(?:,+\s*0x(?P<vr_idoffset>[a-f0-9]*))?\)(?:,\s*OFFSET(?:_3)?\((?P<sse_offset>0x[a-f0-9]+)(?P<ae_offset>,\s*0x[a-f0-9]+)?(?P<vr_offset>,\s*0x[a-f0-9]+)?\))?(?:\s*};)?"
 # tossaponk rel:id https://github.com/tossaponk/ArcheryLocationalDamage/blob/master/src/Offsets.h
 TOSSPONK_REL_ID_PATTTERN = r"case (?P<func_name>[\w_]+)?:[^)]*rel::id\((?P<sseid>[0-9]+)\),\s*(?P<sse_offset>0x[0-9a-f]*)[^;]*rel::id\((?P<aeid>[0-9]+)\),\s*(?P<ae_offset>0x[0-9a-f]*)"
 # commonlibsse-ng patterns constexpr REL::VariantID NiRTTI_BGSAddonNodeSoundHandleExtra(514633, 400793, 0x2f8a838);
@@ -42,6 +42,9 @@ VARIANT_ID_PATTERN = r"REL::VariantID\s+(?P<prefix>\w+)\((?P<sse>[0-9]+),+\s*(?P
 GENERIC_FOO_ID = r"_generic_foo<(?P<sse>[0-9]+),"
 # DKUtil IDToAbs, DKUtil uses alphabetical order so AE ID goes first DKUtil::Hook::IDToAbs(50643, 49716)
 DKUTIL_ID_TO_ABS_PATTERN = r"DKUtil::Hook::IDToAbs\((?P<ae>[0-9]+),+\s*(?P<sse>[0-9]*)(?:,+\s*0x(?P<vr_idoffset>[a-f0-9]*))?\)"
+# Intellightent-style _addr array: static _addr addr[] = { _addr(se_id, offset, "pattern"), _addr(ae_id, ...) };
+# Index 0 is SE/VR (GAME_VER 0), index 1 is AE (GAME_VER 1). Offset within function is ignored.
+ADDR_ARRAY_PATTERN = r"_addr\s+addr\s*\[\s*\]\s*=\s*\{[^}]*?_addr\(\s*(?P<sse>\d+)\s*,[^)]*\)(?:[^}]*?,\s*_addr\(\s*(?P<ae>\d+)\s*,[^)]*\))?"
 ## These are regexes for parsing offset files that typically can help define relationships (older commonlibvr); po3 and ng now allow for definition through macro use
 # commonlibsse-ng patterns
 # namespace BSSoundHandle
@@ -77,12 +80,15 @@ REGEX_PARSE_DICT = {
 FUNCTION_REGEX = r"(?:class (?P<class_decl>\w+)[&\w\s;:<>{=[\]*]*?)?(?P<return_type>[\w<>:*&\s]+?)\s+(?:[\w]+::)*(?P<func_name>[\w]+)\s*\((?P<args>[^)]*),?\s*\)[\w\s]*{(?:[\w\s=]*decltype\(&(?:(?P<class>[\w:]+)::)?(?P=func_name)+(?:<.*>)?\))?[&\w\s;:<>{=*]*?REL(?:[\w:]*ID)\((?:(?P<id>\d*)|(?P<sseid>\d*),\s*(?P<aeid>\d*))\)\s*};"
 GENERIC_FOO_REGEX = r"(?P<return_type>[\w<>:*&]+)\s+(?:\w+::)?(?P<func_name>[\w]+)\s*\((?P<args>[^)]*)?\s*\)[\w\s]*{[^}]*?_generic_foo<(?:(?P<id>\d*)),\s+(?P=return_type)(?:,\s*)?(?:(?P<class>\w+)\*)?.*>\(.*\);"
 FUNCTION_FALLBACK_REGEX = r"(?P<return_type>[\w<>:*&\s]+?)\s+(?:(?P<class>[\w]+)::)*(?P<func_name>(?:operator\s*(?:[^\s()]+|\(\))|[\w~]+))\s*\((?P<args>[^)]*)\)\s*(?:const\s*)?{[^}]*?REL(?:::[\w]+)?\s*(?:<[^>]*>\s*\w+\s*)?{\s*(?:(?:RELOCATION_ID|REL::(?:Relocation)?ID)\((?P<sseid>\d+),\s*(?P<aeid>\d+)\)|REL::ID\((?P<id>\d+)\))\s*}"
+# Handles constructor-style: static REL::RelocationID uid(sse, ae); (no surrounding braces)
+CONSTRUCTOR_FUNCTION_REGEX = r"(?P<return_type>[\w<>:*&\s]+?)\s+(?:(?P<class>[\w]+)::)*(?P<func_name>(?:operator\s*(?:[^\s()]+|\(\))|[\w~]+))\s*\((?P<args>[^)]*)\)\s*(?:const\s*)?{[^}]*?REL::RelocationID\s+\w+\((?P<sseid>\d+),\s*(?P<aeid>\d+)\)"
 ARGS_REGEX = r"(?P<arg_pair>(?:const )?(?P<arg_type>[\w*&:_]+)\s+(?P<arg>[\w_]*)),?"
 FUNCTION_REGEX_PARSE_DICT = {
     "decltype": FUNCTION_REGEX,
     "tossponk": TOSSPONK_REL_ID_PATTTERN,
     "generic_foo": GENERIC_FOO_REGEX,
     "fallback": FUNCTION_FALLBACK_REGEX,
+    "constructor": CONSTRUCTOR_FUNCTION_REGEX,
 }
 REPLACEMENT = """
 #ifndef SKYRIMVR
@@ -553,6 +559,25 @@ async def search_for_ids(
                             print(
                                 f"Found ifndef {filename}::{name} with id: {id} offset: {offset}"
                             )
+            for m in re.finditer(ADDR_ARRAY_PATTERN, data, flags=re.IGNORECASE | re.DOTALL):
+                match = m.groupdict()
+                sse_val = int(match.get("sse") or 0)
+                if sse_val < 1:
+                    continue
+                ae_val = int(match.get("ae") or 0)
+                if ae_val > 0:
+                    sse_ae[sse_val] = ae_val
+                line_num = data[: m.start()].count("\n")
+                results.append(
+                    {
+                        "i": line_num,
+                        "directory": dirpath[len(a_directory) :],
+                        "filename": filename,
+                        "matches": match,
+                    }
+                )
+                if debug:
+                    print(f"Found _addr array in {dirpath}/{filename}:{line_num} sse={sse_val} ae={ae_val}")
     except (UnicodeDecodeError, ValueError, PermissionError) as ex:
         print(f"Unable to read {dirpath}/{filename}: ", ex)
 
